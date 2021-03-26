@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+
+# Wrapper script around nixos stuff.
+
+set -euo pipefail
+
+# Location of local nixpkgs/hardware clone.
+nixpkgs="$HOME/src/nixpkgs"
+nixoshw="$HOME/src/nixos-hardware"
+
+# This branch points at what the current system should be built from. It's rebased on
+# top of the upstream channel release branch. This lets you have a few cherry-picked
+# commits on top of nixos for things that are hard to override or overlay like modules.
+branch="current-sys"
+
+# This is the upstream channel to pull.
+channel="nixos-20.09"
+
+# Location of nixos configs.
+config="$HOME/src/my-nixos-configs"
+
+_set_path() {
+  # Overlays within config repo.
+  local ov="${config}/overlays"
+
+  # Set up the path:
+  export NIX_PATH="nixpkgs=$nixpkgs:nixos-config=$config:nixos-hardware=$nixoshw:nixpkgs-overlays=$ov"
+
+  # Which machine are we:
+  export HOSTNAME
+
+  # Enforce running through this script:
+  export _IN_NX=true
+}
+
+update() {
+  cd $nixpkgs
+
+  # Save previous channel commit.
+  prev=$(git rev-parse origin/$channel)
+
+  # Pull new commits.
+  git fetch origin $channel
+
+  # Display log of commits that will be applied.
+  new=$(git rev-parse origin/$channel)
+  cmd="git log --oneline --no-merges --reverse --decorate --color ${prev:0:11}..${new:0:11}"
+  echo "Log command:"
+  echo "$cmd"
+  $cmd
+
+  # Rebase on what we just pulled.
+  read -p "Rebasing ${branch}, enter to continue, ^C to cancel" x
+  [[ $(git symbolic-ref HEAD) = "refs/heads/$branch" ]] || git checkout $branch
+  git rebase origin/$channel
+}
+
+rebuild() {
+  # Check that we haven't been hacking on stuff:
+  if [[ $(git -C $nixpkgs symbolic-ref HEAD) != "refs/heads/$branch" ]]; then
+    echo 1>&2 "WARNING: HEAD of nixpkgs is not the '$branch' branch"
+    read -p "Press enter to continue or ^C to abort" x
+  fi
+
+  # Do it:
+  sudo nixos-rebuild "$@"
+}
+
+option() {
+  nixos-option "$@"
+}
+
+_set_path
+
+cmd=$1
+shift
+case $cmd in
+  up|update) update "$@" ;;
+  re|rebuild) rebuild "$@" ;;
+  opt|option) option "$@" ;;
+  *) echo "usage: nx up|re|opt ..."
+esac

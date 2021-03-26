@@ -1,0 +1,32 @@
+commit c47f88836d48a0fc03957b80ec0bb6598f56347f
+Author: David Reiss <dnr@dnr.im>
+Date:   Wed Nov 18 20:30:39 2020 -0800
+
+    Fix potential livelock in do_timer_set
+    
+    The old code makes all timers interval timers, with the interval equal
+    to the initial delay, no matter how short the initial delay is (even
+    1µs). On some systems, this can cause so many signals to be delivered
+    that the code that resets the timer never gets to run.
+    
+    The timer is theoretically one-shot; the interval part is only for
+    if we miss the signal due to a race condition. So we can use a fixed
+    small delay for the interval.
+
+diff --git a/libmainloop/signal.c b/libmainloop/signal.c
+index 8e96030b..db485456 100644
+--- a/libmainloop/signal.c
++++ b/libmainloop/signal.c
+@@ -83,8 +83,10 @@ static void do_timer_set()
+         return;
+     }
+ 
+-    val.it_interval.tv_usec=val.it_value.tv_usec;
+-    val.it_interval.tv_sec=val.it_value.tv_sec;
++    // This really just needs to be a one-shot timer, but it is possible
++    // to miss it if it happens too soon. So add a small interval just
++    // so we _eventually_ wake up.
++    val.it_interval.tv_usec=100000;
+ 
+     if((setitimer(ITIMER_REAL, &val, NULL))){
+         had_tmr=TRUE;
