@@ -39,13 +39,10 @@ in
   nixpkgs.config.allowUnfree = true;
 
   # NB: Set this explicitly because nixos ignores the value of <nixpkgs-overlays> from
-  # NIX_PATH. We copy a little code from nixos to import files from a directory.
-  nixpkgs.overlays =
-    let
-      path = localOverlays;
-      files = builtins.readDir path;
-    in map (n: import (path + "/" + n))
-           (builtins.filter (n: builtins.match ".*\\.nix" n != null) (builtins.attrNames files));
+  # NIX_PATH. We copy a little code from nixpkgs to import files from a directory.
+  nixpkgs.overlays = with builtins;
+    map (n: import (localOverlays + "/" + n))
+        (filter (n: match ".*\\.nix" n != null) (attrNames (readDir localOverlays)));
 
   nix.autoOptimiseStore = true;
   nix.extraOptions = ''
